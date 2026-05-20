@@ -9,6 +9,7 @@
 namespace Slic3r {
 
 class PrintObject;
+class PrintConfig;
 
 // Extra spacing of bridge threads, in mm.
 #define BRIDGE_EXTRA_SPACING 0.05
