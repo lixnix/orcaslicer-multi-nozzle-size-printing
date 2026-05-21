@@ -163,11 +163,20 @@ size_t physical_extruder_for_filament(const PrintConfig &print_config, unsigned 
 {
     if (filament_id == 0)
         return 0;
+    const size_t direct         = (size_t)(filament_id - 1);
+    const size_t nozzle_count   = print_config.nozzle_diameter.values.size();
+    const size_t filament_count = print_config.filament_diameter.values.size();
+    // When the printer has at least as many nozzles as filaments, each filament has its own physical
+    // extruder (a toolchanger, or any printer without AMS sharing a nozzle), so the filament index
+    // already is the physical extruder. Only when more filaments share fewer nozzles (AMS) do we need
+    // the filament -> extruder assignment from filament_map.
+    if (filament_count <= nozzle_count)
+        return direct;
     const std::vector<int> &fmap = print_config.filament_map.values;
     if (filament_id <= fmap.size() && fmap[filament_id - 1] >= 1)
         return (size_t)(fmap[filament_id - 1] - 1);
-    // Map not populated for this filament: fall back to direct (filament == extruder) indexing.
-    return (size_t)(filament_id - 1);
+    // filament_map not populated for this filament yet: best effort.
+    return direct < nozzle_count ? direct : 0;
 }
 
 // Adjust extrusion flow for new extrusion line spacing, maintaining the old spacing between extrusions.
