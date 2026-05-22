@@ -1286,6 +1286,26 @@ bool Sidebar::priv::switch_diameter(bool single)
         auto diameter_left = left_extruder->combo_diameter->GetValue();
         auto diameter_right = right_extruder->combo_diameter->GetValue();
         if (diameter_left != diameter_right) {
+            // Multi-nozzle printers (e.g. Bambu H2D/X2D) support a different nozzle diameter per
+            // toolhead. Apply both selected diameters to the printer preset (left -> nozzle 0,
+            // right -> nozzle 1) instead of forcing single-head printing with one shared diameter.
+            Preset& printer_preset = wxGetApp().preset_bundle->printers.get_edited_preset();
+            const auto* nd = dynamic_cast<const ConfigOptionFloats*>(printer_preset.config.option("nozzle_diameter"));
+            double left_val = 0., right_val = 0.;
+            if (nd != nullptr && nd->values.size() >= 2 &&
+                diameter_left.ToCDouble(&left_val) && diameter_right.ToCDouble(&right_val)) {
+                std::vector<double> values = nd->values;
+                values[0] = left_val;
+                values[1] = right_val;
+                DynamicPrintConfig new_conf = printer_preset.config;
+                new_conf.set_key_value("nozzle_diameter", new ConfigOptionFloats(values));
+                if (Tab* printer_tab = wxGetApp().get_tab(Preset::TYPE_PRINTER)) {
+                    printer_tab->load_config(new_conf);
+                    printer_tab->update_dirty();
+                    return true;
+                }
+            }
+            // Fallback for printers that genuinely require one shared diameter.
             std::string printer_type = wxGetApp().preset_bundle->printers.get_edited_preset().get_printer_type(wxGetApp().preset_bundle);
             auto left_name  = _L(DevPrinterConfigUtil::get_toolhead_display_name(printer_type, DEPUTY_EXTRUDER_ID, ToolHeadComponent::Nozzle, ToolHeadNameCase::SentenceCase));
             auto right_name = _L(DevPrinterConfigUtil::get_toolhead_display_name(printer_type, MAIN_EXTRUDER_ID, ToolHeadComponent::Nozzle, ToolHeadNameCase::SentenceCase));
