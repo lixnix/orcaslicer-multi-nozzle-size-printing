@@ -145,9 +145,6 @@ extern Flow support_material_flow(const PrintObject* object, float layer_height 
 extern Flow support_transition_flow(const PrintObject *object); //BBS
 extern Flow support_material_1st_layer_flow(const PrintObject *object, float layer_height = 0.f);
 extern Flow support_material_interface_flow(const PrintObject *object, float layer_height = 0.f);
-extern ConfigOptionFloatOrPercent nozzle_aware_line_width(
-    const PrintConfig &print_config, bool per_feature_filament,
-    const ConfigOptionFloatOrPercent &width, unsigned int extruder_id);
 
 // Map a 1-based filament index to the 0-based physical extruder/nozzle it is assigned to via
 // filament_map. On multi-nozzle printers there can be more filaments than nozzles, and

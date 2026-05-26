@@ -126,39 +126,6 @@ Flow Flow::new_from_config_width(FlowRole role, const ConfigOptionFloatOrPercent
     return Flow(w, height, rounded_rectangle_extrusion_spacing(w, height), nozzle_diameter, false);
 }
 
-ConfigOptionFloatOrPercent nozzle_aware_line_width(
-    const PrintConfig &print_config, bool per_feature_filament,
-    const ConfigOptionFloatOrPercent &width, unsigned int extruder_id)
-{
-    ConfigOptionFloatOrPercent result = width;
-
-    // Per-extruder line width override (printer-level). When > 0 for this extruder, it
-    // replaces the configured width (absolute mm or a percentage of the routed nozzle).
-    bool overridden = false;
-    if (extruder_id > 0 && extruder_id - 1 < print_config.extruder_line_width.values.size()) {
-        const FloatOrPercent &override_v = print_config.extruder_line_width.get_at(extruder_id - 1);
-        if (override_v.value > 0) {
-            result = ConfigOptionFloatOrPercent(override_v.value, override_v.percent);
-            overridden = true;
-        }
-    }
-
-    // When per-feature filaments are enabled on a printer that mixes nozzle sizes, an absolute
-    // mm width tuned for one nozzle is wrong on the others. Without an explicit override, fall
-    // back to an auto width derived from the routed nozzle. Percentage widths already scale with
-    // the nozzle, so leave those untouched. Uniform-nozzle printers keep their profile widths.
-    if (!overridden && per_feature_filament && !result.percent && result.value > 0) {
-        const std::vector<double> &nds = print_config.nozzle_diameter.values;
-        bool mixed_nozzles = false;
-        for (size_t i = 1; i < nds.size(); ++i)
-            if (std::abs(nds[i] - nds.front()) > EPSILON) { mixed_nozzles = true; break; }
-        if (mixed_nozzles)
-            result = ConfigOptionFloatOrPercent(0., false); // 0 => Flow computes an auto width from the nozzle
-    }
-
-    return result;
-}
-
 size_t physical_extruder_for_filament(const PrintConfig &print_config, unsigned int filament_id)
 {
     if (filament_id == 0)
@@ -268,14 +235,11 @@ double Flow::mm3_per_mm() const
 Flow support_material_flow(const PrintObject *object, float layer_height)
 {
     const PrintConfig &print_config = object->print()->config();
-    const bool per_feature = object->print()->default_region_config().enable_per_feature_filament.value;
     const size_t physical_extruder = physical_extruder_for_filament(print_config, (unsigned int)object->config().support_filament.value);
-    ConfigOptionFloatOrPercent width = (object->config().support_line_width.value > 0) ? object->config().support_line_width : object->config().line_width;
-    width = nozzle_aware_line_width(print_config, per_feature, width, (unsigned int)(physical_extruder + 1));
     return Flow::new_from_config_width(
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        width,
+        (object->config().support_line_width.value > 0) ? object->config().support_line_width : object->config().line_width,
         // Nozzle diameter of the physical extruder the support filament is mapped to.
         float(print_config.nozzle_diameter.get_at(physical_extruder)),
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));
@@ -293,15 +257,12 @@ Flow support_transition_flow(const PrintObject* object)
 Flow support_material_1st_layer_flow(const PrintObject *object, float layer_height)
 {
     const PrintConfig &print_config = object->print()->config();
-    const bool per_feature = object->print()->default_region_config().enable_per_feature_filament.value;
     const size_t physical_extruder = physical_extruder_for_filament(print_config, (unsigned int)object->config().support_filament.value);
     const auto &width = (print_config.initial_layer_line_width.value > 0) ? print_config.initial_layer_line_width : object->config().support_line_width;
-    ConfigOptionFloatOrPercent eff_width = (width.value > 0) ? width : object->config().line_width;
-    eff_width = nozzle_aware_line_width(print_config, per_feature, eff_width, (unsigned int)(physical_extruder + 1));
     return Flow::new_from_config_width(
         frSupportMaterial,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        eff_width,
+        (width.value > 0) ? width : object->config().line_width,
         float(print_config.nozzle_diameter.get_at(physical_extruder)),
         (layer_height > 0.f) ? layer_height : float(print_config.initial_layer_print_height.value));
 }
@@ -309,14 +270,11 @@ Flow support_material_1st_layer_flow(const PrintObject *object, float layer_heig
 Flow support_material_interface_flow(const PrintObject *object, float layer_height)
 {
     const PrintConfig &print_config = object->print()->config();
-    const bool per_feature = object->print()->default_region_config().enable_per_feature_filament.value;
     const size_t physical_extruder = physical_extruder_for_filament(print_config, (unsigned int)object->config().support_interface_filament.value);
-    ConfigOptionFloatOrPercent width = (object->config().support_line_width > 0) ? object->config().support_line_width : object->config().line_width;
-    width = nozzle_aware_line_width(print_config, per_feature, width, (unsigned int)(physical_extruder + 1));
     return Flow::new_from_config_width(
         frSupportMaterialInterface,
         // The width parameter accepted by new_from_config_width is of type ConfigOptionFloatOrPercent, the Flow class takes care of the percent to value substitution.
-        width,
+        (object->config().support_line_width > 0) ? object->config().support_line_width : object->config().line_width,
         // Nozzle diameter of the physical extruder the support interface filament is mapped to.
         float(print_config.nozzle_diameter.get_at(physical_extruder)),
         (layer_height > 0.f) ? layer_height : float(object->config().layer_height.value));

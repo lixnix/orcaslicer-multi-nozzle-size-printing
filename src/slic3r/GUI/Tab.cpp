@@ -2642,7 +2642,6 @@ void TabPrint::build()
         optgroup->append_single_option_line("single_extruder_multi_material_priming", "multimaterial_settings_prime_tower");
 
         optgroup = page->new_optgroup(L("Filament for Features"), L"param_filament_for_features");
-        optgroup->append_single_option_line("enable_per_feature_filament", "multimaterial_settings_filament_for_features");
         optgroup->append_single_option_line("wall_filament", "multimaterial_settings_filament_for_features#walls");
         optgroup->append_single_option_line("outer_wall_filament", "multimaterial_settings_filament_for_features#outer-walls");
         optgroup->append_single_option_line("sparse_infill_filament", "multimaterial_settings_filament_for_features#infill");
@@ -5036,7 +5035,6 @@ if (is_marlin_flavor)
             optgroup->append_single_option_line("nozzle_diameter", "printer_extruder_basic_information#nozzle-diameter", extruder_idx);
             //optgroup->append_single_option_line("nozzle_volume_type", "", extruder_idx);
 
-            optgroup->append_single_option_line("extruder_line_width", "printer_extruder_basic_information#line-width-override", extruder_idx);
             optgroup->append_single_option_line("nozzle_volume", "printer_extruder_basic_information#nozzle-volume", extruder_idx);
             optgroup->append_single_option_line("extruder_printable_height", "printer_extruder_basic_information#extruder-layer-height-limits", extruder_idx);
             Option option         = optgroup->get_option("extruder_printable_area", extruder_idx);

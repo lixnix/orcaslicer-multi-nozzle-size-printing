@@ -1076,7 +1076,6 @@ static std::vector<std::string> s_Preset_print_options{
     "solid_infill_filament",
     "top_surface_filament",
     "bottom_surface_filament",
-    "enable_per_feature_filament",
     "support_filament",
     "support_interface_filament",
     "support_interface_not_for_body",

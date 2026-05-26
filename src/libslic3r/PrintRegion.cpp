@@ -4,26 +4,22 @@
 namespace Slic3r {
 
 // 1-based extruder identifier for this region and role.
+// The optional per-feature filament keys (outer_wall_filament, top_surface_filament,
+// bottom_surface_filament) default to 0, meaning "inherit from wall_filament / solid_infill_filament".
+// Only when the user explicitly sets one of them does that feature route to a different filament.
 unsigned int PrintRegion::extruder(FlowRole role) const
 {
-    // The per-feature filament feature is opt-in: when disabled, outer_wall_filament,
-    // top_surface_filament and bottom_surface_filament are ignored and every feature uses
-    // wall_filament / solid_infill_filament / sparse_infill_filament as in stock OrcaSlicer.
-    const bool per_feature = m_config.enable_per_feature_filament.value;
     size_t extruder = 0;
-    if (role == frExternalPerimeter) {
-        extruder = (per_feature && m_config.outer_wall_filament.value > 0) ? m_config.outer_wall_filament : m_config.wall_filament;
-    }
+    if (role == frExternalPerimeter)
+        extruder = (m_config.outer_wall_filament.value > 0) ? m_config.outer_wall_filament : m_config.wall_filament;
     else if (role == frPerimeter)
         extruder = m_config.wall_filament;
     else if (role == frInfill)
         extruder = m_config.sparse_infill_filament;
-    else if (role == frTopSolidInfill) {
-        extruder = (per_feature && m_config.top_surface_filament.value > 0) ? m_config.top_surface_filament : m_config.solid_infill_filament;
-    }
-    else if (role == frBottomSurface) {
-        extruder = (per_feature && m_config.bottom_surface_filament.value > 0) ? m_config.bottom_surface_filament : m_config.solid_infill_filament;
-    }
+    else if (role == frTopSolidInfill)
+        extruder = (m_config.top_surface_filament.value > 0) ? m_config.top_surface_filament : m_config.solid_infill_filament;
+    else if (role == frBottomSurface)
+        extruder = (m_config.bottom_surface_filament.value > 0) ? m_config.bottom_surface_filament : m_config.solid_infill_filament;
     else if (role == frSolidInfill)
         extruder = m_config.solid_infill_filament;
     else
@@ -60,17 +56,11 @@ Flow PrintRegion::flow(const PrintObject &object, FlowRole role, double layer_he
 
     // Resolve which 1-based filament will print this feature, then map it to the physical
     // extruder/nozzle that filament is assigned to (filament_map). On multi-nozzle printers
-    // (e.g. H2D/X2D) with more filaments than nozzles, nozzle_diameter and the per-extruder
-    // overrides are indexed by physical extruder, not by filament, so this mapping is required
-    // for correct per-feature line widths.
+    // with more filaments than nozzles (AMS), nozzle_diameter is indexed by physical extruder,
+    // not by filament, so this mapping is required for correct per-feature nozzle lookup.
     unsigned int filament_id       = this->extruder(role);
     size_t       physical_extruder = physical_extruder_for_filament(print_config, filament_id);
     auto nozzle_diameter = float(print_config.nozzle_diameter.get_at(physical_extruder));
-
-    // Apply the per-extruder line-width override and the mixed-nozzle auto-width fallback.
-    // See nozzle_aware_line_width() in Flow.cpp; supports use the same helper. The override is
-    // indexed by physical extruder, so pass the 1-based physical extruder id.
-    config_width = nozzle_aware_line_width(print_config, m_config.enable_per_feature_filament.value, config_width, (unsigned int)(physical_extruder + 1));
 
     return Flow::new_from_config_width(role, config_width, nozzle_diameter, float(layer_height));
 }
@@ -98,18 +88,17 @@ void PrintRegion::collect_object_printing_extruders(const PrintConfig &print_con
     	int i = std::max(0, extruder_id - 1);
         object_extruders.emplace_back((i >= num_extruders) ? 0 : i);
     };
-    const bool per_feature = region_config.enable_per_feature_filament.value;
     if (region_config.wall_loops.value > 0 || has_brim)
     	emplace_extruder(region_config.wall_filament);
-    if (per_feature && region_config.wall_loops.value > 0 && region_config.outer_wall_filament.value > 0)
+    if (region_config.wall_loops.value > 0 && region_config.outer_wall_filament.value > 0)
         emplace_extruder(region_config.outer_wall_filament);
     if (region_config.sparse_infill_density.value > 0)
     	emplace_extruder(region_config.sparse_infill_filament);
     if (region_config.top_shell_layers.value > 0 || region_config.bottom_shell_layers.value > 0)
     	emplace_extruder(region_config.solid_infill_filament);
-    if (per_feature && region_config.top_shell_layers.value > 0 && region_config.top_surface_filament.value > 0)
+    if (region_config.top_shell_layers.value > 0 && region_config.top_surface_filament.value > 0)
     	emplace_extruder(region_config.top_surface_filament);
-    if (per_feature && region_config.bottom_shell_layers.value > 0 && region_config.bottom_surface_filament.value > 0)
+    if (region_config.bottom_shell_layers.value > 0 && region_config.bottom_surface_filament.value > 0)
     	emplace_extruder(region_config.bottom_surface_filament);
 }
 

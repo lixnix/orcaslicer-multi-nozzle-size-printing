@@ -316,12 +316,11 @@ std::vector<std::set<int>> PrintObject::detect_extruder_geometric_unprintables()
                 continue;
             for (auto layerm : layer->regions()) {
                 auto region = layerm->region();
-                const bool per_feature = region.config().enable_per_feature_filament.value;
                 int wall_filament = region.config().wall_filament;
-                int outer_wall_filament = per_feature ? region.config().outer_wall_filament : 0;
+                int outer_wall_filament = region.config().outer_wall_filament;
                 int solid_infill_filament = region.config().solid_infill_filament;
-                int top_surface_filament = per_feature ? region.config().top_surface_filament : 0;
-                int bottom_surface_filament = per_feature ? region.config().bottom_surface_filament : 0;
+                int top_surface_filament = region.config().top_surface_filament;
+                int bottom_surface_filament = region.config().bottom_surface_filament;
                 int sparse_infill_filament = region.config().sparse_infill_filament;
 
                 if (!layerm->fills.entities.empty()) {
@@ -364,11 +363,10 @@ std::vector<std::set<int>> PrintObject::detect_extruder_geometric_unprintables()
                 auto layer = m_layers[j];
                 for (auto layerm : layer->regions()) {
                     const auto& region = layerm->region();
-                    const bool per_feature = region.config().enable_per_feature_filament.value;
                     int wall_filament = region.config().wall_filament;
                     int solid_infill_filament = region.config().solid_infill_filament;
-                    int top_surface_filament = per_feature ? region.config().top_surface_filament : 0;
-                    int bottom_surface_filament = per_feature ? region.config().bottom_surface_filament : 0;
+                    int top_surface_filament = region.config().top_surface_filament;
+                    int bottom_surface_filament = region.config().bottom_surface_filament;
                     int sparse_infill_filament = region.config().sparse_infill_filament;
                     std::optional<ExPolygons> fill_expolys;
                     BoundingBox fill_bbox;
@@ -1349,7 +1347,6 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "outer_wall_filament"
             || opt_key == "top_surface_filament"
             || opt_key == "bottom_surface_filament"
-            || opt_key == "enable_per_feature_filament"
             || opt_key == "fuzzy_skin"
             || opt_key == "fuzzy_skin_thickness"
             || opt_key == "fuzzy_skin_point_distance"
@@ -3453,42 +3450,19 @@ static constexpr const std::initializer_list<const std::string_view> keys_extrud
 
 static void apply_to_print_region_config(PrintRegionConfig &out, const DynamicPrintConfig &in)
 {
-    // Resolve the effective per-feature-filament toggle for this apply scope: if `in`
-    // overrides it, use the override; otherwise inherit from the parent (`out`). The
-    // toggle is consulted again — once — at the end of region_config_from_model_volume
-    // to actually enforce "ignore per-feature filaments when off"; we MUST NOT zero out
-    // any filament keys here because apply_to_print_region_config is called multiple
-    // times per region (object config, then volume config, then material, …) and a
-    // subsequent call with no `extruder` key would otherwise wipe out values populated
-    // by an earlier call.
-    auto *opt_per_feature = in.opt<ConfigOptionBool>("enable_per_feature_filament");
-    const bool effective_per_feature = (opt_per_feature != nullptr) ? opt_per_feature->value
-                                                                    : out.enable_per_feature_filament.value;
-
-    // 1) Copy values from `in` to `out`.
-    //    A per-feature filament key present in `in` is an explicit override even when its
-    //    value is 0 ("Default") — that's how the user says "use the object's colour for this
-    //    feature, regardless of what the preset has". Keys NOT present in `in` are left alone
-    //    so they inherit from `out` (the parent / preset).
-    //    When the per-feature toggle is OFF in this scope, every per-feature filament key is
-    //    ignored so stored values can't sneak in past the toggle.
+    // 1) Copy values from `in` to `out`. A per-feature filament key present in `in` is an
+    //    explicit override even when its value is 0 ("Default") — that's how the user says
+    //    "use the object's colour for this feature, regardless of what the preset has". Keys
+    //    NOT present in `in` are left alone so they inherit from `out` (the parent / preset).
     for (auto it = in.cbegin(); it != in.cend(); ++ it)
         if (it->first != key_extruder)
-            if (ConfigOption* my_opt = out.option(it->first, false); my_opt != nullptr) {
-                if (one_of(it->first, keys_extruders)) {
-                    if (effective_per_feature) {
-                        int extruder = static_cast<const ConfigOptionInt*>(it->second.get())->value;
-                        my_opt->setInt(extruder);
-                    }
-                } else
-                    my_opt->set(it->second.get());
-            }
+            if (ConfigOption* my_opt = out.option(it->first, false); my_opt != nullptr)
+                my_opt->set(it->second.get());
 
-    // 2) Legacy "extruder" key (the object's colour) populates ONLY the per-feature
-    //    filament keys that are still at "Default" (0). Previously this step
-    //    unconditionally overwrote any preset value, which is what caused the
-    //    width/routing bug where a globally-configured solid_infill_filament was
-    //    silently replaced by the object's colour.
+    // 2) Legacy "extruder" key (the object's colour) populates ONLY the per-feature filament
+    //    keys that are still at "Default" (0). Previously this step unconditionally overwrote
+    //    any preset value, which silently replaced a globally configured solid_infill_filament
+    //    with the object's colour.
     auto *opt_extruder = in.opt<ConfigOptionInt>(key_extruder);
     if (opt_extruder)
         if (int extruder = opt_extruder->value; extruder >= 1) {
@@ -3520,39 +3494,13 @@ PrintRegionConfig region_config_from_model_volume(const PrintRegionConfig &defau
     	apply_to_print_region_config(config, *layer_range_config);
     }
 
-    // When the per-feature filament feature is OFF, ignore any stored wall / infill / solid /
-    // outer / top / bottom filament values and force every feature to use the object's colour
-    // (= the most specific "extruder" key in the volume/object chain). This has to happen here
-    // rather than inside apply_to_print_region_config because that helper runs once per scope
-    // (object, volume, material, …) and only the first scope has the object's "extruder" key —
-    // zeroing inside the helper would let a subsequent scope without "extruder" leave the
-    // values at 0 and the clamp below would promote them to 1 (== black for most users).
-    if (!config.enable_per_feature_filament.value) {
-        int object_extruder = 0;
-        auto pick = [&object_extruder](const DynamicPrintConfig &cfg) {
-            if (auto *opt = cfg.opt<ConfigOptionInt>(key_extruder); opt != nullptr && opt->value > 0)
-                object_extruder = opt->value;
-        };
-        // Most-specific wins: volume > object.
-        if (volume.is_model_part())
-            pick(volume.get_object()->config.get());
-        pick(volume.config.get());
-        if (object_extruder < 1)
-            object_extruder = 1;
-        config.wall_filament.value           = object_extruder;
-        config.sparse_infill_filament.value  = object_extruder;
-        config.solid_infill_filament.value   = object_extruder;
-        config.outer_wall_filament.value     = 0;
-        config.top_surface_filament.value    = 0;
-        config.bottom_surface_filament.value = 0;
-    } else {
-        // Per-feature filaments ON: the global per-feature split (wall vs infill vs surfaces) is
-        // inherited from the preset. But when the user explicitly assigns a colour to an individual
-        // volume — e.g. a painted part or a TEXT MODIFIER — they want that whole sub-region printed
-        // in that colour, overriding the per-feature split for it. That colour is stored as the
-        // "extruder" key on the *volume's own* config (object-level colour lives on the object
-        // config and is intentionally not considered here, so it can't clobber the global
-        // per-feature filaments). Per-feature keys the volume sets itself still win.
+    // When the user explicitly assigns a colour to an individual volume — e.g. a painted part or a
+    // TEXT MODIFIER — they want that whole sub-region printed in that colour, overriding the global
+    // per-feature split for it. That colour is stored as the "extruder" key on the *volume's own*
+    // config; object-level colour lives on the object config and is intentionally not considered
+    // here, so it can't clobber intentional global per-feature filaments. Per-feature keys the
+    // volume sets itself still win.
+    {
         const DynamicPrintConfig &vc = volume.config.get();
         if (auto *opt = vc.opt<ConfigOptionInt>(key_extruder); opt != nullptr && opt->value >= 1) {
             const int vol_extruder = opt->value;
